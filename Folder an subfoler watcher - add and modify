@@ -1,0 +1,126 @@
+//This scrip sweeps a folder (folderId variable) and 2 levels of subfolder within it for new and modified files since the last time it ran, sends an email with the list for a mailing list, and records the data on the spreadsheet.
+//For more levels, you will have to add code
+//To watch more than one folder, create several instances of this script/spreadsheet, one for each "root" folder you want to watch
+
+function checkForChangedFiles() 
+{
+  // Customizable variables and instructions for each new instance of this script
+  var folderID = "1WhArmyqa_9ILlQygZHwlac2a7ldZMPc0";                     //Go into the folder and copy the last piece of the adress
+  var projectId = "PROJECT X"                                             //Name of the project, process, subject, etc, of that folder
+  var responsible = "COMPANY Y"                                           //name of the responsible for the project, process, etc
+  //E1 cell: DON'T FORGET to update the mailng list on the spreadsheet
+  //H1 cell: Insert the date you want to start monitoring the folder. Use this format: "YYYYMMdd HH:mm:ss"
+  //Trigger: You need to create a time based trigger for this script to run.
+
+  // Email Configuration  - Change the varibles below to personalise the header, body and footer of your email
+  var emailFromName ="YOUR COMPANY Gdrive Watcher (Do Not Reply)";
+  var emailSubject = "Files added/modified in the folder for - " + projectId;
+  //The list of files added/changed will be displayed here in the email
+  var emailBody = "<br> For those responsible from the company " + responsible + " for the project " + projectId +"<br>" +
+  "YOUR COMPANY<br>" +
+  "1234 MAIN STREET HERE<br>" +
+  "CITY STATE 22333-1234<br>" +
+  "Phone: 123-456-7890<br>" +
+  "http://WWW.WEBSITE.COM<br>"+
+  "USER@EMAIL.COM";
+  var emailFooter = "To stop receiving this email, contact USER@EMAIL.COM.";
+  
+  //Auxiary variables
+  var ss = SpreadsheetApp.getActiveSpreadsheet();     
+  var sheet = ss.getActiveSheet();                    
+  var email = sheet.getRange("E1").getValue();                             //gets mailing list on the spreadsheet
+  var timezone = "GMT-05:00";                                              //used to compare every date in the same time zone
+  var timezone2 = ss.getSpreadsheetTimeZone();                             //used to store the correct text in the spreadsheet an email body
+  var dateFormat = "YYYYMMdd HH:mm:ss"                                     //used to format the date into the correct format for comparison 
+                                                                            
+  
+  var startTime = sheet.getRange("H1").getValue();                          //Gets the last time this script ran -- "EEE MMM dd HH:mm:ss zzz YYYY"
+  Logger.log("startTime: " + startTime);
+  
+  var files  = new Array();                                                 //list of the files within the folder and subfolders
+  var updatedFiles = new Array();                                           //list of the files within the folder and sub-folder with modifications
+
+  //Sweeps the root folder for files
+  var rootFiles = DriveApp.getFolderById(folderID).getFiles();
+  while(rootFiles.hasNext())
+  {
+    var rootFile = rootFiles.next();
+    files.push(rootFile);
+  }
+
+  //Sweeps the subfolders for files
+  var subfolders = DriveApp.getFolderById(folderID).getFolders();
+  while(subfolders.hasNext())
+  {
+    var subfolder = subfolders.next();
+    var subfiles = subfolder.getFiles();
+    while(subfiles.hasNext())
+    {
+      var subfile = subfiles.next();
+      files.push(subfile);
+    }
+    //Sweeps for subfolder whitin the subfolders. It stops at the second level of subfolders. ROOT (folderId variable) > subfolders > subfolders2
+    //For more levels the code needs to be added
+    var subfolders2 = DriveApp.getFolderById(subfolder.getId()).getFolders();
+    while(subfolders2.hasNext())
+    {
+      var subfolder2 = subfolders2.next();
+      var subfiles2 = subfolder2.getFiles();
+      while(subfiles2.hasNext())
+      {
+        var subfile2 = subfiles2.next();
+        files.push(subfile2);
+      }
+      //For more levels, at while loop here!!
+    }
+  }
+
+  //Select the files that has the creationDate OR modifiedDate > than the last time the script ran
+  for(var i = 0; i < files.length; i++)
+  {
+    var file = files[i];
+    var createdDate = Utilities.formatDate(file.getDateCreated(),timezone, dateFormat);
+    var modifiedDate = Utilities.formatDate(file.getLastUpdated(),timezone, dateFormat);
+
+    Logger.log("file: " + file.getName() + " // creation: " + createdDate + " // modifi: " + modifiedDate);
+
+    if(modifiedDate > startTime || createdDate > startTime)  
+    {
+      updatedFiles.push(file);
+    }
+  }  
+  
+  Logger.log("LIST OF FILES FOUND IN FOLDER WITH UPDATE > STARTDATE:")
+  for(var i = 0; i < updatedFiles.length; i++)                             
+  {
+    var file = updatedFiles[i];
+    var createdDate = Utilities.formatDate(file.getDateCreated(),timezone, dateFormat);
+    var modifiedDate = Utilities.formatDate(file.getLastUpdated(),timezone, dateFormat);
+
+    Logger.log("file: " + file.getName() + " // creation: " + createdDate + " // modifi: " + modifiedDate);
+  }  
+  
+  //Created the rows for the spreadsheet and the email body, using only the files that were updated
+  var row = "", count = 0;   
+  for(var i =0; i < updatedFiles.length; i++)
+  {
+    var fileName = updatedFiles[i].getName();
+    var fileURL  = updatedFiles[i].getUrl();
+    var lastUpdated =  Utilities.formatDate(updatedFiles[i].getLastUpdated(), timezone2, "yyyy-MM-dd HH:mm");
+    var dateCreated =  Utilities.formatDate(updatedFiles[i].getDateCreated(), timezone2, "yyyy-MM-dd HH:mm")
+    //Logger.log(file.getLastUpdated());
+    
+    row += "<li>" + lastUpdated + " <a href='" + fileURL + "'>" + fileName + "</a></li>";
+    sheet.appendRow([dateCreated, lastUpdated, fileName, fileURL]);   
+    count++; 
+  }  
+  
+  if (row !== "") 
+  {
+    row = "<p>" + count + " arquivo(s) foram alterados. Aqui está a lista:</p><ol>" + row + "</ol>";
+    row +=  emailBody+"<br>" + "<br><small> "+emailFooter+" </a>.</small>";     
+    MailApp.sendEmail(email, emailSubject, "", {name: emailFromName, htmlBody: row});
+  }  
+
+  sheet.getRange("H1").setValue(Utilities.formatDate(new Date(),timezone, dateFormat))
+}
